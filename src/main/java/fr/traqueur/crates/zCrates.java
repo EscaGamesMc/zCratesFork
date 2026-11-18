@@ -53,6 +53,7 @@ import fr.traqueur.crates.views.buttons.AnimationButton;
 import fr.traqueur.crates.views.buttons.PreviewButton;
 import fr.traqueur.crates.views.buttons.RerollButton;
 import fr.traqueur.crates.views.loaders.PreviewLoader;
+import fr.traqueur.crates.views.buttons.options.PlayerInventoryButtonOption;
 import fr.traqueur.structura.api.Structura;
 import fr.traqueur.structura.exceptions.StructuraException;
 import fr.traqueur.structura.registries.CustomReaderRegistry;
@@ -223,6 +224,7 @@ public class zCrates extends CratesPlugin {
             this.buttonManager.register(new NoneLoader(this, AnimationButton.class, "ZCRATES_ANIMATION"));
             this.buttonManager.register(new PreviewLoader(this, "ZCRATES_PREVIEW"));
             this.buttonManager.register(new NoneLoader(this, RerollButton.class, "ZCRATES_REROLL"));
+            this.inventoryManager.registerOption(this, PlayerInventoryButtonOption.class);
         }
     }
 
@@ -399,7 +401,7 @@ public class zCrates extends CratesPlugin {
 
            Map<String, Integer> animationCounts = new HashMap<>();
             for (Crate crate : cratesRegistry.getAll()) {
-                String animationId = crate.animation().id();
+                String animationId = crate.animation() == null ? "instant-reward" : crate.animation().id();
                 animationCounts.put(animationId, animationCounts.getOrDefault(animationId, 0) + 1);
             }
 

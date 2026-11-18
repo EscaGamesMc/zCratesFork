@@ -17,6 +17,7 @@ import fr.traqueur.structura.annotations.defaults.DefaultInt;
 import fr.traqueur.structura.api.Loadable;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import fr.traqueur.structura.exceptions.StructuraException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,10 +25,11 @@ import java.util.List;
 public record ZCrate(String id,
                      String displayName,
                      Key key,
-                     Animation animation,
+                     @Options(optional = true) Animation animation,
                      RandomAlgorithm algorithm,
                      List<Reward> rewards,
-                     String relatedMenu,
+                     @Options(optional = true) String relatedMenu,
+                     @Options(optional = true) @DefaultBool(true) boolean rollingPreview,
                      @Options(optional = true) @DefaultInt(0) int maxRerolls,
                      @Options(optional = true) @DefaultInt(0) int maxBatchSize,
                      @Options(optional = true) List<Condition> conditions,
@@ -36,6 +38,16 @@ public record ZCrate(String id,
     public ZCrate {
         if (conditions == null) {
             conditions = new ArrayList<>();
+        }
+        // Instant-reward crates never open a menu, so animation and related-menu are
+        // pointless there. For every other crate both remain mandatory.
+        if (!instantReward) {
+            if (animation == null) {
+                throw new StructuraException("animation is required but not provided for crate '" + id + "'");
+            }
+            if (animation.usesInventory() && relatedMenu == null) {
+                throw new StructuraException("related-menu is required but not provided for crate '" + id + "'");
+            }
         }
     }
 

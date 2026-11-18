@@ -32,7 +32,10 @@ public class CrateOpenEvent extends CrateEvent {
     /**
      * Gets the animation that will be played.
      *
-     * @return the animation
+     * <p>May be {@code null} for crates configured with {@code instant-reward: true},
+     * which grant their reward without opening a menu.</p>
+     *
+     * @return the animation, or {@code null} if none is played
      */
     public Animation getAnimation() {
         return animation;

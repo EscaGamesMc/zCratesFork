@@ -24,6 +24,7 @@ import fr.traqueur.crates.api.registries.CrateDisplayFactoriesRegistry;
 import fr.traqueur.crates.api.registries.CratesRegistry;
 import fr.traqueur.crates.api.registries.Registry;
 import fr.traqueur.crates.listeners.CratesListener;
+import fr.traqueur.crates.listeners.RollingPreviewListener;
 import fr.traqueur.crates.models.placedcrates.EntityCrateDisplay;
 import fr.traqueur.crates.models.wrappers.CrateWrapper;
 import fr.traqueur.crates.models.wrappers.InventoryWrapper;
@@ -31,6 +32,7 @@ import fr.traqueur.crates.models.wrappers.PlayerWrapper;
 import fr.traqueur.crates.api.serialization.Keys;
 import fr.traqueur.crates.api.settings.Settings;
 import fr.traqueur.crates.settings.PluginSettings;
+import fr.traqueur.crates.utils.RewardDisplay;
 import fr.traqueur.crates.views.CrateMenu;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
@@ -39,13 +41,17 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.persistence.PersistentDataContainer;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class ZCratesManager implements CratesManager {
 
@@ -53,13 +59,22 @@ public class ZCratesManager implements CratesManager {
     private final AnimationExecutor animationExecutor;
     private final Map<UUID, OpenedCrate> openingCrates;
     private final Map<UUID, Crate> previewingCrates;
+    private final Map<UUID, PendingReward> pendingRewards;
 
     // Placed crates management - single cache combining data and display
     private final Map<Location, ActivePlacedCrate> placedCratesCache;
 
+    private static final List<Integer> ROLLING_PREVIEW_SLOTS = IntStream.concat(
+            IntStream.rangeClosed(9, 35),
+            IntStream.rangeClosed(0, 8)
+    ).boxed().toList();
+
+    private static final long REWARD_DELIVERY_DELAY = 2L;
+
     @Override
     public void init() {
         this.getPlugin().registerListener(new CratesListener(this));
+        this.getPlugin().registerListener(new RollingPreviewListener(this));
         this.ensureInventoriesExist();
 
         // Delay placed crates loading to ensure MythicMobs/ModelEngine are fully initialized
@@ -80,6 +95,8 @@ public class ZCratesManager implements CratesManager {
         // Stored for reroll to restart animation
         protected Inventory inventory;
         protected List<Integer> slots;
+        protected ItemStack[] savedContents;
+        protected final List<ItemStack> previewItems = new ArrayList<>();
 
         public OpenedCrate(Crate crate, Animation animation) {
             this.crate = crate;
@@ -91,11 +108,14 @@ public class ZCratesManager implements CratesManager {
 
     private record ActivePlacedCrate(PlacedCrate data, CrateDisplay<?> display) {}
 
+    private record PendingReward(Crate crate, Reward reward) {}
+
     public ZCratesManager(InventoryManager inventoryManager) {
         this.animationExecutor = new AnimationExecutor(this.getPlugin());
         this.inventoryManager = inventoryManager;
         this.openingCrates = new ConcurrentHashMap<>();
         this.previewingCrates = new ConcurrentHashMap<>();
+        this.pendingRewards = new ConcurrentHashMap<>();
         this.placedCratesCache = new ConcurrentHashMap<>();
     }
 
@@ -130,43 +150,25 @@ public class ZCratesManager implements CratesManager {
             condition.onOpen(player, crate);
         }
 
-        if (crate.instantReward()) {
-            this.giveInstantReward(player, crate);
-        } else {
-            this.openCrate(player, crate, crate.animation());
-        }
+        this.openCrate(player, crate, crate.animation());
         return OpenResult.success();
-    }
-
-    private void giveInstantReward(Player player, Crate crate) {
-        UsersManager usersManager = this.getPlugin().getManager(UsersManager.class);
-        User user = usersManager.getUser(player.getUniqueId());
-
-        Reward reward = crate.generateReward(user);
-
-        RewardGeneratedEvent rewardEvent = new RewardGeneratedEvent(player, crate, reward, false);
-        Bukkit.getPluginManager().callEvent(rewardEvent);
-
-        CrateOpening crateOpening = user.addCrateOpening(crate.id(), reward.id());
-        usersManager.persistCrateOpening(crateOpening);
-
-        reward.give(player);
-
-        RewardGivenEvent givenEvent = new RewardGivenEvent(player, crate, reward);
-        Bukkit.getPluginManager().callEvent(givenEvent);
-
-        Logger.debug("Player {} received instant reward {} from crate '{}'", player.getName(), reward.id(), crate.id());
     }
 
     @Override
     public void openCrate(Player player, Crate crate, Animation animation) {
+        if (crate.instantReward()) {
+            this.giveInstantReward(player, crate, animation);
+            return;
+        }
+
         if(this.openingCrates.containsKey(player.getUniqueId())) {
             return;
         }
+        this.deliverPendingReward(player);
         OpenedCrate openedCrate = new OpenedCrate(crate, animation);
         this.openingCrates.put(player.getUniqueId(), openedCrate);
         if (animation.usesInventory()) {
-            this.inventoryManager.openInventory(player, crate.relatedMenu());
+            this.inventoryManager.openInventory(player, this.getPlugin(), crate.relatedMenu());
         }
 
         // Fire open event (after menu is opened)
@@ -179,6 +181,33 @@ public class ZCratesManager implements CratesManager {
         }
     }
 
+    /**
+     * Rolls and grants the reward straight away, without opening any menu or
+     * playing an animation. Fires the same events as a regular opening so that
+     * listeners behave identically, minus the reroll-related ones.
+     */
+    private void giveInstantReward(Player player, Crate crate, Animation animation) {
+        CrateOpenEvent openEvent = new CrateOpenEvent(player, crate, animation);
+        Bukkit.getPluginManager().callEvent(openEvent);
+
+        UsersManager usersManager = this.getPlugin().getManager(UsersManager.class);
+        User user = usersManager.getUser(player.getUniqueId());
+
+        Reward reward = crate.generateReward(user);
+
+        RewardGeneratedEvent rewardEvent = new RewardGeneratedEvent(player, crate, reward, false);
+        Bukkit.getPluginManager().callEvent(rewardEvent);
+
+        CrateOpening crateOpening = user.addCrateOpening(crate.id(), reward.id());
+        usersManager.persistCrateOpening(crateOpening);
+
+        reward.give(player);
+        Logger.debug("Player {} received instant reward {} from crate {}", player.getName(), reward.id(), crate.id());
+
+        RewardGivenEvent givenEvent = new RewardGivenEvent(player, crate, reward);
+        Bukkit.getPluginManager().callEvent(givenEvent);
+    }
+
     @Override
     public void openPreview(Player player, Crate crate) {
         CratePreviewEvent previewEvent = new CratePreviewEvent(player, crate);
@@ -187,12 +216,15 @@ public class ZCratesManager implements CratesManager {
             return;
         }
 
-        this.previewingCrates.put(player.getUniqueId(), crate);
-        String previewMenu = crate.relatedMenu() + "-preview";
-        if (this.inventoryManager.getInventory(this.getPlugin(), previewMenu).isEmpty()) {
-            previewMenu = "crate-preview";
+        var preview = Optional.ofNullable(crate.relatedMenu())
+                .flatMap(menu -> this.inventoryManager.getInventory(this.getPlugin(), menu + "-preview"))
+                .or(() -> this.inventoryManager.getInventory(this.getPlugin(), "crate-preview"));
+        if (preview.isEmpty()) {
+            Logger.warning("No preview inventory loaded for crate '{}'", crate.id());
+            return;
         }
-        this.inventoryManager.openInventory(player, previewMenu);
+        this.previewingCrates.put(player.getUniqueId(), crate);
+        this.inventoryManager.openInventory(player, preview.get());
     }
 
     @Override
@@ -212,7 +244,6 @@ public class ZCratesManager implements CratesManager {
         // Store inventory and slots for potential reroll
         openedCrate.inventory = inventory;
         openedCrate.slots = slots;
-        openedCrate.animationCompleted = false;
 
         this.runAnimation(player, openedCrate, inventory, slots);
     }
@@ -220,6 +251,8 @@ public class ZCratesManager implements CratesManager {
     private void runAnimation(Player player, OpenedCrate openedCrate, Inventory inventory, List<Integer> slots) {
         // Determine if this is a reroll (animation already started once before)
         boolean isReroll = openedCrate.animationId != null;
+
+        openedCrate.animationCompleted = false;
 
         PlayerWrapper playerWrapper = new PlayerWrapper(player);
         Crate crate = openedCrate.crate;
@@ -240,6 +273,10 @@ public class ZCratesManager implements CratesManager {
         CrateOpening crateOpening = user.addCrateOpening(crate.id(), reward.id());
         usersManager.persistCrateOpening(crateOpening);
 
+        if (inventory != null) {
+            this.showRollingPreview(player, openedCrate);
+        }
+
         InventoryWrapper inventoryWrapper = inventory == null ? null : new InventoryWrapper(this.getPlugin(), player, crate, inventory, slots);
         // Pass supplier to get live rerolls remaining count
         CrateWrapper crateWrapper = new CrateWrapper(crate, player, reward, () -> openedCrate.rerollsRemaining);
@@ -259,11 +296,85 @@ public class ZCratesManager implements CratesManager {
         openedCrate.animationId = animationId;
         this.animationExecutor.startAnimation(animationId, openedCrate.animation, new AnimationContext(playerWrapper, inventoryWrapper, crateWrapper, hookContext), () -> {
             openedCrate.animationCompleted = true;
+            this.hideRollingPreview(player, openedCrate);
             // Without a menu to close, the reward is given as soon as the animation ends
             if (!openedCrate.animation.usesInventory()) {
                 this.closeCrate(player);
             }
         });
+    }
+
+    private void showRollingPreview(Player player, OpenedCrate openedCrate) {
+        Crate crate = openedCrate.crate;
+        if (!crate.rollingPreview() || crate.rewards().isEmpty()) {
+            return;
+        }
+
+        PlayerInventory playerInventory = player.getInventory();
+        ItemStack[] contents = playerInventory.getStorageContents();
+        if (openedCrate.savedContents == null) {
+            openedCrate.savedContents = Arrays.stream(contents)
+                    .map(item -> item == null ? null : item.clone())
+                    .toArray(ItemStack[]::new);
+        }
+
+        try {
+            double totalWeight = RewardDisplay.totalWeight(crate);
+            List<Reward> rewards = RewardDisplay.sortedByRarity(crate);
+
+            playerInventory.setStorageContents(new ItemStack[contents.length]);
+            openedCrate.previewItems.clear();
+            for (int index = 0; index < Math.min(rewards.size(), ROLLING_PREVIEW_SLOTS.size()); index++) {
+                ItemStack item = RewardDisplay.buildDisplayItem(player, rewards.get(index), totalWeight);
+                openedCrate.previewItems.add(item);
+                playerInventory.setItem(ROLLING_PREVIEW_SLOTS.get(index), item);
+            }
+            player.updateInventory();
+
+            if (rewards.size() > ROLLING_PREVIEW_SLOTS.size()) {
+                Logger.debug("Crate {} has {} rewards, only the {} rarest fit the rolling preview",
+                        crate.id(), rewards.size(), ROLLING_PREVIEW_SLOTS.size());
+            }
+        } catch (Exception exception) {
+            Logger.severe("Failed to display the rolling preview of crate '" + crate.id() + "', giving the inventory back", exception);
+            this.hideRollingPreview(player, openedCrate);
+        }
+    }
+
+    private void hideRollingPreview(Player player, OpenedCrate openedCrate) {
+        if (openedCrate.savedContents == null) {
+            return;
+        }
+        player.getInventory().setStorageContents(openedCrate.savedContents);
+        openedCrate.savedContents = null;
+        openedCrate.previewItems.clear();
+        player.updateInventory();
+    }
+
+    public void handleDeath(PlayerDeathEvent event) {
+        Player player = event.getEntity();
+        OpenedCrate openedCrate = this.openingCrates.get(player.getUniqueId());
+        if (openedCrate == null || openedCrate.savedContents == null) {
+            return;
+        }
+
+        ItemStack[] saved = openedCrate.savedContents;
+        if (event.getKeepInventory()) {
+            player.getInventory().setStorageContents(saved);
+            player.updateInventory();
+        } else {
+            List<ItemStack> drops = event.getDrops();
+            openedCrate.previewItems.forEach(drops::remove);
+            Arrays.stream(saved).filter(Objects::nonNull).forEach(drops::add);
+        }
+
+        openedCrate.savedContents = null;
+        openedCrate.previewItems.clear();
+    }
+
+    public boolean isRollingPreviewShown(Player player) {
+        OpenedCrate openedCrate = this.openingCrates.get(player.getUniqueId());
+        return openedCrate != null && openedCrate.savedContents != null;
     }
 
     @Override
@@ -394,26 +505,71 @@ public class ZCratesManager implements CratesManager {
                 player.closeInventory();
             }
         });
+        Bukkit.getOnlinePlayers().forEach(this::deliverPendingReward);
     }
 
     @Override
     public void closeCrate(Player player) {
-        OpenedCrate instance = this.openingCrates.remove(player.getUniqueId());
-        if (instance != null) {
-            UUID animationId = instance.animationId;
-            if (animationId != null && this.animationExecutor.isRunning(animationId)) {
-                this.animationExecutor.cancelAnimation(animationId);
-            }
-            // If animation was completed, give the current reward on close
-            if (instance.currentReward != null) {
-                instance.currentReward.give(player);
-                Logger.debug("Player {} received reward {} on inventory close", player.getName(), instance.currentReward.id());
+        this.deliverPendingReward(player);
 
-                // Fire reward given event
-                RewardGivenEvent givenEvent = new RewardGivenEvent(player, instance.crate, instance.currentReward);
-                Bukkit.getPluginManager().callEvent(givenEvent);
-            }
+        OpenedCrate instance = this.openingCrates.remove(player.getUniqueId());
+        if (instance == null) {
+            return;
         }
+
+        UUID animationId = instance.animationId;
+        if (animationId != null && this.animationExecutor.isRunning(animationId)) {
+            this.animationExecutor.cancelAnimation(animationId, true);
+        }
+        this.hideRollingPreview(player, instance);
+        if (!instance.animation.usesInventory()) {
+            if (instance.currentReward != null) deliverReward(player, new PendingReward(instance.crate, instance.currentReward));
+            return;
+        }
+        this.resyncInventory(player);
+
+        if (instance.currentReward == null) {
+            Logger.warning("Player {} closed crate {} with no reward to give, the roll never produced one",
+                    player.getName(), instance.crate.id());
+            return;
+        }
+
+        this.pendingRewards.put(player.getUniqueId(), new PendingReward(instance.crate, instance.currentReward));
+        if (this.getPlugin().isEnabled() && player.isOnline()) {
+            Bukkit.getScheduler().runTaskLater(this.getPlugin(), () -> this.deliverPendingReward(player), REWARD_DELIVERY_DELAY);
+        } else {
+            this.deliverPendingReward(player);
+        }
+    }
+
+    public void deliverPendingReward(Player player) {
+        PendingReward pending = this.pendingRewards.remove(player.getUniqueId());
+        if (pending == null) {
+            return;
+        }
+
+        deliverReward(player, pending);
+    }
+
+    private void deliverReward(Player player, PendingReward pending) {
+        pending.reward().give(player);
+        Logger.debug("Player {} received reward {} from crate {}", player.getName(), pending.reward().id(), pending.crate().id());
+        player.updateInventory();
+
+        RewardGivenEvent givenEvent = new RewardGivenEvent(player, pending.crate(), pending.reward());
+        Bukkit.getPluginManager().callEvent(givenEvent);
+    }
+
+    private void resyncInventory(Player player) {
+        if (!this.getPlugin().isEnabled()) {
+            player.updateInventory();
+            return;
+        }
+        Bukkit.getScheduler().runTask(this.getPlugin(), () -> {
+            if (player.isOnline()) {
+                player.updateInventory();
+            }
+        });
     }
 
     @Override
@@ -421,17 +577,28 @@ public class ZCratesManager implements CratesManager {
         this.inventoryManager.deleteInventories(this.getPlugin());
         CratesRegistry registry = Registry.get(CratesRegistry.class);
 
+        loadPreview("crate-preview");
         for (Crate crate : registry.getAll()) {
+            String menu = crate.relatedMenu();
+            if (menu == null) continue;
+            loadPreview(menu + "-preview");
+            if (crate.instantReward() || !crate.animation().usesInventory()) continue;
             try {
-                if (this.inventoryManager.getInventory(this.getPlugin(), crate.relatedMenu()).isEmpty()) {
-                    this.inventoryManager.loadInventoryOrSaveResource(this.getPlugin(), "inventories/" + crate.relatedMenu() + ".yml", CrateMenu.class);
+                if (this.inventoryManager.getInventory(this.getPlugin(), menu).isEmpty()) {
+                    this.inventoryManager.loadInventoryOrSaveResource(this.getPlugin(), "inventories/" + menu + ".yml", CrateMenu.class);
                 }
-                if (this.inventoryManager.getInventory(this.getPlugin(), crate.relatedMenu() + "-preview").isEmpty()) {
-                    this.inventoryManager.loadInventoryOrSaveResource(this.getPlugin(), "inventories/preview/" + crate.relatedMenu() + "-preview.yml");
-                }
-            } catch (InventoryException e) {
-                Logger.warning("Failed to load or create inventory for crate '{}': {}", crate.id(), e.getMessage());
+            } catch (InventoryException | IllegalArgumentException e) {
+                Logger.warning("Failed to load opening menu for crate '{}': {}", crate.id(), e.getMessage());
             }
+        }
+    }
+
+    private void loadPreview(String name) {
+        if (this.inventoryManager.getInventory(this.getPlugin(), name).isPresent()) return;
+        try {
+            this.inventoryManager.loadInventoryOrSaveResource(this.getPlugin(), "inventories/preview/" + name + ".yml");
+        } catch (InventoryException | IllegalArgumentException e) {
+            Logger.warning("Failed to load preview '{}': {}", name, e.getMessage());
         }
     }
 

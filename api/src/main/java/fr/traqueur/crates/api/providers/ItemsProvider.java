@@ -17,4 +17,8 @@ public interface ItemsProvider {
      * @return the corresponding ItemStack
      */
     ItemStack item(Player player, String itemId);
+    /** Recognises an untagged native item as a crate key, when supported by this provider. */
+    default boolean matches(ItemStack item, String itemId) {
+        return false;
+    }
 }

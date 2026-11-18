@@ -10,6 +10,7 @@ A modern, feature-rich crate/loot box plugin for Minecraft Paper servers with Ja
 - **Flexible Rewards** - Items, commands, or multiple of each
 - **Opening Conditions** - Permissions, cooldowns, and custom conditions
 - **Reroll System** - Allow players to reroll for a different reward
+- **Rolling Preview** - Show every possible reward in the player inventory while the crate rolls
 - **Multi-Display Support** - Blocks, entities, MythicMobs, ItemsAdder, Nexo, Oraxen
 - **PlaceholderAPI** - Built-in placeholders for keys and statistics
 - **Database Support** - SQLite, MySQL, MariaDB

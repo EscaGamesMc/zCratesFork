@@ -8,18 +8,28 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 
+import fr.traqueur.crates.api.registries.ItemsProvidersRegistry;
+import fr.traqueur.crates.api.registries.Registry;
+
 import java.util.Optional;
 
 public record PhysicKey(String name, ItemStackWrapper item) implements Key {
 
+    private boolean matches(ItemStack stack) {
+        if (stack == null || !stack.hasItemMeta()) return false;
+        Optional<String> taggedKey = Keys.KEY_NAME.get(stack.getItemMeta().getPersistentDataContainer());
+        if (taggedKey.isPresent()) return name.equals(taggedKey.get());
+        var source = item.copyFrom();
+        if (source == null) return false;
+        var provider = Registry.get(ItemsProvidersRegistry.class).getById(source.pluginName());
+        return provider != null && provider.matches(stack, source.itemId());
+    }
+
     @Override
     public boolean has(Player player) {
         for (ItemStack itemStack : player.getInventory().getContents()) {
-            if (itemStack != null && itemStack.hasItemMeta()) {
-                Optional<String> keyName = Keys.KEY_NAME.get(itemStack.getItemMeta().getPersistentDataContainer());
-                if (keyName.isPresent() && keyName.get().equals(this.name)) {
-                    return true;
-                }
+            if (matches(itemStack)) {
+                return true;
             }
         }
         return false;
@@ -28,12 +38,9 @@ public record PhysicKey(String name, ItemStackWrapper item) implements Key {
     @Override
     public void remove(Player player) {
         for (ItemStack itemStack : player.getInventory().getContents()) {
-            if (itemStack != null && itemStack.hasItemMeta()) {
-                Optional<String> keyName = Keys.KEY_NAME.get(itemStack.getItemMeta().getPersistentDataContainer());
-                if (keyName.isPresent() && keyName.get().equals(this.name)) {
-                    itemStack.setAmount(itemStack.getAmount() - 1);
-                    return;
-                }
+            if (matches(itemStack)) {
+                itemStack.setAmount(itemStack.getAmount() - 1);
+                return;
             }
         }
     }
@@ -54,11 +61,8 @@ public record PhysicKey(String name, ItemStackWrapper item) implements Key {
     public int count(Player player) {
         int count = 0;
         for (ItemStack itemStack : player.getInventory().getContents()) {
-            if (itemStack != null && itemStack.hasItemMeta()) {
-                Optional<String> keyName = Keys.KEY_NAME.get(itemStack.getItemMeta().getPersistentDataContainer());
-                if (keyName.isPresent() && keyName.get().equals(this.name)) {
-                    count += itemStack.getAmount();
-                }
+            if (matches(itemStack)) {
+                count += itemStack.getAmount();
             }
         }
         return count;

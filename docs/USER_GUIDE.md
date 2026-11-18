@@ -131,6 +131,61 @@ rewards:
     command: "eco give %player% 1000"
 ```
 
+### Rolling Preview (possible rewards below the menu)
+
+While the crate rolls — the whole time the items scroll in the menu, until they stop —
+the player inventory is replaced by every reward the crate can give, sorted from the
+rarest to the most common, with the same chance lore as the preview menu. The real
+inventory comes back as soon as the animation stops, and the preview reappears for each
+reroll.
+
+The `rolling-preview` key is optional and defaults to `true`, so there is nothing to
+add to a crate file to get it. Turn it off per crate with:
+
+```yaml
+rolling-preview: false
+```
+
+Details worth knowing:
+
+- The player inventory is locked while the preview is displayed: the items shown are
+  display items, no click, drag or hotbar swap can take them.
+- Only the 36 rarest rewards fit; a crate with more logs the rest at debug level.
+- It has no effect on `instant-reward: true` crates, they never roll.
+
+### Instant Reward (no menu)
+
+Set `instant-reward: true` to skip the GUI entirely. The reward is rolled and given
+to the player in the same tick, with no inventory opening and no animation:
+
+```yaml
+id: common
+instant-reward: true
+
+algorithm: weighted
+display-name: "<gray>Common Crate"
+
+key:
+  type: VIRTUAL
+  name: "common-key"
+
+rewards:
+  - type: COMMAND
+    id: money-reward
+    weight: 1.0
+    display-item:
+      material: GOLD_INGOT
+    command: "eco give %player% 100"
+```
+
+With `instant-reward: true`, both `animation` and `related-menu` are optional.
+Setting `related-menu` still selects a dedicated preview. Animated openings need an
+animation, and inventory-based animations also need an opening menu.
+
+> Note: using `animation: instant` is **not** the same thing. It still opens the crate
+> menu, shows the reward for 500 ms, then closes it — which looks like the menu is
+> flashing open and shut. Use `instant-reward: true` for a true no-GUI opening.
+
 ---
 
 ## Key Types
@@ -378,6 +433,25 @@ key:
       - "<gray>Right-click on a legendary crate"
       - "<gray>to unlock amazing rewards!"
 ```
+
+#### Native EscagamesItems keys
+
+A physical key can use the internal ID from EscagamesItems. Both keys issued by zCrates and
+untagged stacks issued directly by EscagamesItems can open the crate. One opening consumes
+one item. Two crates configured with the same item ID accept the same untagged keys.
+
+```yaml
+key:
+  type: PHYSIC
+  name: legendary-key
+  item:
+    copy-from:
+      plugin-name: EscagamesItems
+      item-id: cle_legendaire
+```
+
+The preview uses `inventories/preview/<related-menu>-preview.yml` when available,
+including for instant rewards. The shared fallback is `inventories/preview/crate-preview.yml`.
 
 #### Item Reward with Multiple Customizations
 
