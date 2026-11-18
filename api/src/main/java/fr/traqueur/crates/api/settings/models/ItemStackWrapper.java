@@ -48,11 +48,6 @@ public record ItemStackWrapper(
         @Options(optional = true) Integer customModelData
 ) implements Loadable {
 
-    public ItemStackWrapper(Material material, int amount, Delegate copyFrom, String displayName,
-                            String itemName, List<String> lore) {
-        this(material, amount, copyFrom, displayName, itemName, lore, null);
-    }
-
     /**
      * Delegate class for specifying an item via an ItemsProvider.
      *

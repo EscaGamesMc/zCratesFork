@@ -82,6 +82,8 @@ dependencies {
     rootProject.subprojects.filter { it.path.startsWith(":hooks:") }.forEach { subproject ->
         implementation(project(subproject.path))
     }
+    // Rhino embarque dans le jar (Leaf/Purpur fournit deja une vieille version de Rhino)
+    implementation("org.mozilla:rhino:1.9.1")
 }
 
 tasks {
@@ -92,6 +94,10 @@ tasks {
             archiveClassifier.set(rootProject.extra.properties["classifier"] as String?)
         }
         destinationDirectory.set(rootProject.extra["targetFolder"] as File)
+
+        // Evite le conflit avec le Rhino 1.7 integre a Leaf/Purpur
+        relocate("org.mozilla", "fr.traqueur.crates.libs.mozilla")
+        mergeServiceFiles()
     }
 
     build {
