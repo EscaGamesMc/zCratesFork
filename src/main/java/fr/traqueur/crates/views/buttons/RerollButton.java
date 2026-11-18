@@ -57,7 +57,7 @@ public class RerollButton extends Button {
         CratesManager cratesManager = this.plugin.getManager(CratesManager.class);
         int remaining = cratesManager.getRerollsRemaining(player);
         placeholders.register("remaining", String.valueOf(remaining));
-        return getItemStack().build(player, false, placeholders);
+        return getItemStack().build(player, useCache, placeholders);
     }
 
 }

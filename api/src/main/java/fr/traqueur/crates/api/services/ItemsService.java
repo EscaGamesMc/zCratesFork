@@ -99,6 +99,10 @@ public class ItemsService {
         itemStack.setItemMeta(meta);
     }
 
+    public static ItemStack createItem(Material material, int amount, Component displayName, List<Component> lore, Component itemName) {
+        return createItem(material, amount, displayName, lore, itemName, null);
+    }
+
     /**
      * Creates a new ItemStack with the specified material, amount, display name, and lore.
      *
@@ -107,9 +111,10 @@ public class ItemsService {
      * @param displayName The display name as a Component
      * @param lore        The lore lines as Components
      * @param itemName    The item name as a Component
+     * @param customModelData The custom model data to apply (optional)
      * @return The created ItemStack
      */
-    public static ItemStack createItem(Material material, int amount, Component displayName, List<Component> lore, Component itemName) {
+    public static ItemStack createItem(Material material, int amount, Component displayName, List<Component> lore, Component itemName, Integer customModelData) {
         ItemStack itemStack = new ItemStack(material, amount);
 
         if (displayName != null) {
@@ -122,6 +127,10 @@ public class ItemsService {
 
         if (itemName != null) {
             setItemName(itemStack, itemName);
+        }
+
+        if (customModelData != null) {
+            setCustomModelData(itemStack, customModelData);
         }
 
         return itemStack;
@@ -197,5 +206,25 @@ public class ItemsService {
         currentLore.add(line.decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
 
         setLore(itemStack, currentLore);
+    }
+
+    /**
+     * Sets the custom model data of an ItemStack.
+     *
+     * @param itemStack The ItemStack to modify
+     * @param customModelData The custom model data value to set
+     */
+    public static void setCustomModelData(ItemStack itemStack, int customModelData) {
+        if (itemStack == null) {
+            return;
+        }
+
+        ItemMeta meta = itemStack.getItemMeta();
+        if (meta == null) {
+            return;
+        }
+
+        meta.setCustomModelData(customModelData);
+        itemStack.setItemMeta(meta);
     }
 }

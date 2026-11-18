@@ -65,7 +65,7 @@ public class PreviewButton extends PaginateButton {
             String papiString = PlaceholderProvider.parsePlaceholders(player, Messages.CHANCE_REWARD_LORE_LINE.get());
             Component chanceComponent = MessagesService.parseMessage(papiString, Placeholder.parsed("chance", CHANCE_FORMAT.format(chance)));
             ItemsService.addLoreLine(item, chanceComponent);
-            inventoryEngine.addItem(slot, item);
+            inventoryEngine.addItem(this.isPlayerInventory(), slot, item);
         });
     }
 

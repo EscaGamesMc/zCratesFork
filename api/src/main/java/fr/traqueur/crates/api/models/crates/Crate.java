@@ -79,10 +79,33 @@ public interface Crate {
     /**
      * Gets the animation to play when opening this crate.
      *
-     * @return the animation configuration
+     * <p>May be {@code null} when {@link #instantReward()} is {@code true}, since
+     * no menu is opened and therefore no animation is played.</p>
+     *
+     * @return the animation configuration, or {@code null} for instant-reward crates
      * @see Animation
      */
     Animation animation();
+
+    /**
+     * Whether this crate delivers its reward immediately, without opening a menu.
+     *
+     * <p>When enabled, opening the crate skips the inventory and the animation
+     * entirely: the reward is rolled and given to the player in the same tick.
+     * {@link #animation()} and {@link #relatedMenu()} become irrelevant and may
+     * be omitted from the configuration.</p>
+     *
+     * <p>Configured with the {@code instant-reward} key in the crate YAML file.</p>
+     *
+     * @return true if the reward is granted instantly, false to play the animation
+     */
+    default boolean instantReward() {
+        return false;
+    }
+
+    default boolean rollingPreview() {
+        return true;
+    }
 
     /**
      * Gets the algorithm used to select rewards from this crate.
@@ -97,7 +120,9 @@ public interface Crate {
      *
      * <p>This refers to an inventory file in {@code plugins/zCrates/inventories/}.</p>
      *
-     * @return the menu identifier
+     * <p>May be {@code null} when {@link #instantReward()} is {@code true}.</p>
+     *
+     * @return the menu identifier, or {@code null} for instant-reward crates
      */
     String relatedMenu();
 
@@ -148,13 +173,6 @@ public interface Crate {
      * @return a random display item from the rewards list
      */
     ItemStackWrapper randomDisplay();
-
-    /**
-     * Gets whether this crate instantly gives the reward without opening any menu or animation.
-     *
-     * @return true if the crate skips the animation and gives the reward immediately
-     */
-    boolean instantReward();
 
     /**
      * Generates a reward for a user using the configured algorithm.

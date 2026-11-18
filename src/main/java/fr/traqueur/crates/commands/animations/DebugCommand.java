@@ -34,7 +34,11 @@ public class DebugCommand extends Command<@NotNull CratesPlugin> {
 
         Animation animation = arguments.get("animation");
         Player player = (Player) sender;
-        Crate crate = Registry.get(CratesRegistry.class).getAll().getFirst();
+        // Instant-reward crates never open a menu, so they cannot host an animation
+        Crate crate = Registry.get(CratesRegistry.class).getAll().stream()
+                .filter(candidate -> !candidate.instantReward())
+                .findFirst()
+                .orElse(null);
         if (crate == null) {
             MessagesService.sendMessage(player, "<red>No crate found to debug the animation.");
             return;

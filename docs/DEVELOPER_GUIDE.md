@@ -585,6 +585,7 @@ item:
 - `Oraxen` - Oraxen custom items
 - `Nexo` - Nexo custom items
 - `zItems` - zItems custom items (via ItemsAdder provider)
+- `EscagamesItems` - EscaGamesItems custom items
 
 ---
 

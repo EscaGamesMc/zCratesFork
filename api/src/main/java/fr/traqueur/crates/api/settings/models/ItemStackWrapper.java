@@ -30,6 +30,7 @@ import java.util.List;
  * @param displayName  the display name of the item (optional)
  * @param itemName     the custom item name (optional)
  * @param lore         the lore of the item as a list of strings (optional)
+ * @param customModelData the custom model data of the item (optional)
  */
 public record ItemStackWrapper(
         @Options(optional = true) Material material,
@@ -42,8 +43,15 @@ public record ItemStackWrapper(
 
         @Options(optional = true) String itemName,
 
-        @Options(optional = true) List<String> lore
+        @Options(optional = true) List<String> lore,
+
+        @Options(optional = true) Integer customModelData
 ) implements Loadable {
+
+    public ItemStackWrapper(Material material, int amount, Delegate copyFrom, String displayName,
+                            String itemName, List<String> lore) {
+        this(material, amount, copyFrom, displayName, itemName, lore, null);
+    }
 
     /**
      * Delegate class for specifying an item via an ItemsProvider.
@@ -127,12 +135,15 @@ public record ItemStackWrapper(
             if (parsedItemName != null) {
                 ItemsService.setItemName(item, parsedItemName);
             }
+            if (customModelData != null) {
+                ItemsService.setCustomModelData(item, customModelData);
+            }
             if (item.getAmount() != amount) {
                 item.setAmount(amount);
             }
             return item;
         }
 
-        return ItemsService.createItem(material, amount, parsedDisplayName, lore, parsedItemName);
+        return ItemsService.createItem(material, amount, parsedDisplayName, lore, parsedItemName, customModelData);
     }
 }

@@ -68,9 +68,13 @@ public class AnimationExecutor {
      * @return true if the animation was cancelled, false if not found
      */
     public boolean cancelAnimation(UUID instanceId) {
+        return this.cancelAnimation(instanceId, false);
+    }
+
+    public boolean cancelAnimation(UUID instanceId, boolean silent) {
         RunningAnimation running = runningAnimations.remove(instanceId);
         if (running != null) {
-            running.cancel();
+            running.cancel(silent);
             return true;
         }
         return false;
@@ -289,6 +293,10 @@ public class AnimationExecutor {
          * Cancels the animation.
          */
         public void cancel() {
+            this.cancel(false);
+        }
+
+        public void cancel(boolean silent) {
             if (finished) {
                 return;
             }
@@ -298,6 +306,10 @@ public class AnimationExecutor {
             
             if (currentTask != null) {
                 currentTask.cancel();
+            }
+
+            if (silent) {
+                return;
             }
 
             // Execute onCancel callback
