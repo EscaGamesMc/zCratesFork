@@ -14,6 +14,7 @@ invalid-format: "<red>Invalid format for argument."
 # ========================================
 invalid-amount: "<red>Amount must be greater than 0."
 keys-given: "<green>Gave x<amount> key(s) for the crate <crate> to <player>."
+keys-given-all: "<green>Gave x<amount> key(s) for the crate <crate> to <count> online player(s)."
 
 # ========================================
 # Placed Crates
