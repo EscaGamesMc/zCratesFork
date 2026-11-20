@@ -2,7 +2,7 @@ package fr.traqueur.crates.views;
 
 import fr.maxlego08.menu.api.button.Button;
 import fr.maxlego08.menu.api.engine.InventoryEngine;
-import fr.maxlego08.menu.inventory.zinv.ZInventory;
+import fr.maxlego08.menu.inventory.zinv.ZChestInventory;
 import fr.traqueur.crates.api.CratesPlugin;
 import fr.traqueur.crates.api.managers.CratesManager;
 import fr.traqueur.crates.views.buttons.AnimationButton;
@@ -12,7 +12,7 @@ import org.bukkit.plugin.Plugin;
 import java.util.ArrayList;
 import java.util.List;
 
-public class CrateMenu extends ZInventory {
+public class CrateMenu extends ZChestInventory {
 
     private final CratesPlugin plugin;
     private final AnimationButton animationButton;
